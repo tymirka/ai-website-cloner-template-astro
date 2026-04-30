@@ -1,34 +1,43 @@
-<!-- BEGIN:nextjs-agent-rules -->
-# This is NOT the Next.js you know
+<!-- BEGIN:astro-agent-rules -->
+# Astro, not Next.js
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
-<!-- END:nextjs-agent-rules -->
+This template uses Astro 6 (static SSG), not Next.js. If your prior session or training data assumes Next.js here, discard that assumption. Read the Astro docs and the types in `node_modules/astro/` before writing code. Key differences to remember:
+
+- Pages live in `src/pages/*.astro`, not `src/app/*.tsx`. No App Router, no file-based route handlers.
+- No React by default. Components are `.astro` files. If interactivity is required, prefer a `<script>` block in the `.astro` file over reaching for a UI framework.
+- No `next/font`, `next/image`, `next/link`, `"use client"`, or any `next/*` import. Fonts come from Google Fonts via `<link>` in the layout. Images are plain `<img>` (or Astro's `<Image />` from `astro:assets` when needed).
+- Build output goes to `dist/` (static HTML + assets). No `.next/` directory, no standalone server.
+<!-- END:astro-agent-rules -->
 
 # Website Reverse-Engineer Template
 
 ## What This Is
-A reusable template for reverse-engineering any website into a clean, modern Next.js codebase using AI coding agents. The Next.js + shadcn/ui + Tailwind v4 base is pre-scaffolded — just run `/clone-website <url1> [<url2> ...]`.
+A reusable template for reverse-engineering any website into a clean, modern Astro codebase using AI coding agents. The Astro + Tailwind v4 base is pre-scaffolded — just run `/clone-website <url1> [<url2> ...]`.
 
 ## Tech Stack
-- **Framework:** Next.js 16 (App Router, React 19, TypeScript strict)
-- **UI:** shadcn/ui (Radix primitives, Tailwind CSS v4, `cn()` utility)
-- **Icons:** Lucide React (default — will be replaced/supplemented by extracted SVGs)
-- **Styling:** Tailwind CSS v4 with oklch design tokens
-- **Deployment:** Vercel
+- **Framework:** Astro 6 (static SSG, Vite, TypeScript strict)
+- **UI:** Native `.astro` components (no React, no shadcn/ui)
+- **Icons:** Inline SVGs extracted from the target site, rendered from `src/components/Icons.astro`
+- **Styling:** Tailwind CSS v4 via `@tailwindcss/vite` with oklch design tokens
+- **Utilities:** `cn()` (clsx + tailwind-merge) in `src/lib/utils.ts`
+- **Deployment:** Any static host (Vercel, Netlify, Cloudflare Pages, nginx)
 
 ## Commands
-- `npm run dev` — Start dev server
-- `npm run build` — Production build
+- `npm run dev` — Start dev server on http://localhost:4321
+- `npm run build` — Production static build into `dist/`
+- `npm run preview` — Serve the built `dist/` locally
 - `npm run lint` — ESLint check
-- `npm run typecheck` — TypeScript check
+- `npm run typecheck` — `astro check` (TypeScript + `.astro` diagnostics)
 - `npm run check` — Run lint + typecheck + build
 
 ## Code Style
 - TypeScript strict mode, no `any`
-- Named exports, PascalCase components, camelCase utils
+- `.astro` files for all components and pages; PascalCase filenames (`HeroSection.astro`), camelCase utils
 - Tailwind utility classes, no inline styles
 - 2-space indentation
 - Responsive: mobile-first
+- Prefer Astro's `class:list={[...]}` for conditional classes; reach for `cn()` only when merging Tailwind conflicts
+- Client-side JS via `<script>` blocks in `.astro` files. No React/Vue/Svelte integrations are installed — if a component genuinely needs a framework island, add the integration explicitly and justify it
 
 ## Design Principles
 - **Pixel-perfect emulation** — match the target's spacing, colors, typography exactly
@@ -39,15 +48,17 @@ A reusable template for reverse-engineering any website into a clean, modern Nex
 ## Project Structure
 ```
 src/
-  app/              # Next.js routes
-  components/       # React components
-    ui/             # shadcn/ui primitives
-    icons.tsx       # Extracted SVG icons as React components
+  pages/            # Astro routes (index.astro, etc.)
+  layouts/          # Shared layouts (BaseLayout.astro)
+  components/       # Reusable .astro components
+    Icons.astro     # Extracted SVG icons rendered by `name` prop
+  styles/
+    globals.css     # Tailwind v4 + oklch design tokens
   lib/
-    utils.ts        # cn() utility (shadcn)
+    utils.ts        # cn() utility
   types/            # TypeScript interfaces
-  hooks/            # Custom React hooks
 public/
+  favicon.ico
   images/           # Downloaded images from target site
   videos/           # Downloaded videos from target site
   seo/              # Favicons, OG images, webmanifest
@@ -55,6 +66,7 @@ docs/
   research/         # Inspection output (design tokens, components, layout)
   design-references/ # Screenshots and visual references
 scripts/            # Asset download scripts
+astro.config.mjs    # Astro + Tailwind v4 (Vite plugin) config
 ```
 
 ## MOST IMPORTANT NOTES
