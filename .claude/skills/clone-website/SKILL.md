@@ -29,8 +29,9 @@ If the user provides additional instructions (specific fidelity level, customiza
 1. **Browser automation is required.** Check for available browser MCP tools (Chrome MCP, Playwright MCP, Browserbase MCP, Puppeteer MCP, etc.). Use whichever is available — if multiple exist, prefer Chrome MCP. If none are detected, ask the user which browser tool they have and how to connect it. This skill cannot work without browser automation.
 2. Parse `$ARGUMENTS` as one or more URLs. Normalize and validate each URL; if any are invalid, ask the user to correct them before proceeding. For each valid URL, verify it is accessible via your browser MCP tool.
 3. Verify the base project builds: `npm run build`. The Astro + Tailwind v4 scaffold should already be in place. If not, tell the user to set it up first.
-4. Create the output directories if they don't exist: `docs/research/`, `docs/research/components/`, `docs/design-references/`, `scripts/`. For multiple clones, also prepare per-site folders like `docs/research/<hostname>/` and `docs/design-references/<hostname>/`.
-5. When working with multiple sites in one command, optionally confirm whether to run them in parallel (recommended, if resources allow) or sequentially to avoid overload.
+4. **Inspect the existing project before planning the clone.** If `src/pages/`, `src/layouts/`, `src/components/`, `src/styles/`, or `public/` already contain implemented work, treat the task as adapting a new page or subpage into the current site. Reuse the project's layouts, header/footer, navigation, buttons, cards, icons, utilities, design tokens, and asset conventions wherever they fit. Do not duplicate shared elements or create a parallel design system unless the target page genuinely needs a new pattern.
+5. Create the output directories if they don't exist: `docs/research/`, `docs/research/components/`, `docs/design-references/`, `scripts/`. For multiple clones, also prepare per-site folders like `docs/research/<hostname>/` and `docs/design-references/<hostname>/`.
+6. When working with multiple sites in one command, optionally confirm whether to run them in parallel (recommended, if resources allow) or sequentially to avoid overload.
 
 ## Guiding Principles
 
@@ -120,6 +121,13 @@ Every builder agent must verify `npx astro check` passes before finishing. After
 ## Phase 1: Reconnaissance
 
 Navigate to the target URL with browser MCP.
+
+### Existing Project Inventory
+Before extracting the target page in detail, inventory the current Astro project:
+- Review `src/pages/` to identify the route, page structure, and naming conventions the new subpage should follow.
+- Review `src/layouts/`, `src/components/`, `src/styles/globals.css`, `src/components/Icons.astro`, and `public/` for reusable elements, tokens, icons, and assets.
+- Document which existing components must be reused or extended in `docs/research/PAGE_TOPOLOGY.md` or the relevant component spec.
+- If the target is a subpage of an already cloned site, adapt it to the existing header, footer, navigation, layout containers, typography tokens, and component patterns instead of rebuilding those from scratch.
 
 ### Screenshots
 - Take **full-page screenshots** at desktop (1440px) and mobile (390px) viewports
@@ -314,6 +322,7 @@ For each section (or sub-component, if you're breaking it up), create a spec fil
 - **Target file:** `src/components/<ComponentName>.astro`
 - **Screenshot:** `docs/design-references/<screenshot-name>.png`
 - **Interaction model:** <static | click-driven | scroll-driven | time-driven>
+- **Existing project reuse:** <components, layouts, icons, tokens, or assets to reuse/extend; write "N/A" only if none apply>
 
 ## DOM Structure
 <Describe the element hierarchy — what contains what>
@@ -386,6 +395,7 @@ Based on complexity, dispatch builder agent(s) in worktree(s):
 - The full contents of its component spec file (inline in the prompt — don't say "go read the spec file")
 - Path to the section screenshot in `docs/design-references/`
 - Which shared components to import (`Icons.astro`, `cn()` from `@/lib/utils`, any existing layouts)
+- Which existing project components, style tokens, icons, and assets must be reused or extended
 - The target file path (e.g., `src/components/HeroSection.astro`)
 - Instruction to verify with `npx astro check` before finishing
 - For responsive behavior: the specific breakpoint values and what changes
@@ -404,11 +414,12 @@ The extract → spec → dispatch → merge cycle continues until all sections a
 
 ## Phase 4: Page Assembly
 
-After all sections are built and merged, wire everything together in `src/pages/index.astro` (wrapped in `src/layouts/BaseLayout.astro`):
+After all sections are built and merged, wire everything together in the appropriate Astro route. For a fresh single-page clone this is usually `src/pages/index.astro`; for an existing project or cloned subpage, create or update the matching file under `src/pages/` and preserve the current route conventions. Wrap the page in the existing layout, usually `src/layouts/BaseLayout.astro`, unless the project already uses a more specific layout:
 
 - Import all section components
 - Implement the page-level layout from your topology doc (scroll containers, column structures, sticky positioning, z-index layering)
 - Connect real content to component props
+- Reuse the project's existing header, footer, navigation, layout wrappers, and shared UI components unless the target page intentionally differs
 - Implement page-level behaviors inside `<script>` blocks in the page or layout: scroll snap, scroll-driven animations, dark-to-light transitions, intersection observers, smooth scroll (Lenis etc.)
 - Verify: `npm run build` passes clean
 
@@ -441,6 +452,7 @@ Before dispatching ANY builder agent, verify you can check every box. If you can
 - [ ] All images in the section are identified (including overlays and layered compositions)
 - [ ] Responsive behavior is documented for at least desktop and mobile
 - [ ] Text content is verbatim from the site, not paraphrased
+- [ ] Existing project components, tokens, layouts, icons, and assets have been considered for reuse
 - [ ] The builder prompt is under ~150 lines of spec; if over, the section needs to be split
 
 ## What NOT to Do
@@ -460,6 +472,7 @@ These are lessons from previous failed clones — each one cost hours of rework:
 - **Don't skip responsive extraction.** If you only inspect at desktop width, the clone will break at tablet and mobile. Test at 1440, 768, and 390 during extraction.
 - **Don't forget smooth scroll libraries.** Check for Lenis (`.lenis` class), Locomotive Scroll, or similar. Default browser scrolling feels noticeably different and the user will spot it immediately.
 - **Don't dispatch builders without a spec file.** The spec file forces exhaustive extraction and creates an auditable artifact. Skipping it means the builder gets whatever you can fit in a prompt from memory.
+- **Don't rebuild shared site chrome for subpages in an existing project.** If the current project already has a header, footer, navigation, layout, buttons, cards, icons, or tokens, adapt the subpage to those elements instead of creating duplicates.
 
 ## Completion
 

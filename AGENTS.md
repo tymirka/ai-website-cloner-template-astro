@@ -45,6 +45,11 @@ A reusable template for reverse-engineering any website into a clean, modern Ast
 - **Real content** — use actual text and assets from the target site, not placeholders
 - **Beauty-first** — every pixel matters
 
+## Existing Project Adaptation
+- If the repository already contains implemented pages, layouts, components, design tokens, or assets, adapt the new page to the current project instead of treating it as a fresh scaffold.
+- Reuse existing shared elements first: layouts, header/footer, navigation, buttons, cards, icons, utility classes, content patterns, and style tokens. Create new components only when the current project has no suitable equivalent.
+- When cloning a subpage into an existing site, preserve the site's established structure and route conventions, and integrate the subpage with the same visual language and reusable building blocks.
+
 ## Project Structure
 ```
 src/
