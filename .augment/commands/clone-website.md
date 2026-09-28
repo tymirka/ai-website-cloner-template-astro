@@ -8,7 +8,7 @@ argument-hint: "<url>"
 
 # Clone Website
 
-You are about to reverse-engineer and rebuild **$ARGUMENTS** as pixel-perfect clones.
+You are about to reverse-engineer and rebuild **$ARGUMENTS** as pixel-perfect clones in **Astro 7** (static SSG). Every page, component, and config change targets Astro 7 directly — never write code for an older Astro major and migrate later.
 
 When multiple URLs are provided, preserve every pathname as a distinct route and isolate each target's research, screenshots, page-only components, and assets. URLs that differ only by query string or fragment share a pathname, so resolve their route and state behavior explicitly in the output plan. Parallelize page work only after the shared foundation and output plan are fixed so concurrent builders cannot overwrite one another.
 
@@ -51,11 +51,24 @@ Routing defaults:
 - If the planned route already exists, stop and ask whether to update that route, choose another route, or skip it.
 - URLs from different origins may require incompatible fonts, global CSS, and layouts. Before modifying files, ask whether the user wants separate Astro projects (recommended) or an intentionally combined multi-site project with a per-site layout (`src/layouts/<SiteName>Layout.astro`) and site-scoped tokens. Do not silently mix global foundations.
 
+## Astro 7 Target Rules
+
+These rules hold for every file you or a builder writes. They come from real Astro 7 regressions that pass `npm run build` and still ship a wrong page.
+
+1. **Keep `compressHTML: true` in `astro.config.mjs`.** Astro 7's default (`'jsx'`) removes whitespace around elements across line breaks, so verbatim copy like `Call\n<a>555 0100</a>\nnow` renders as `Call555 0100now` and `<span>USD</span>\n<span>(1 234)</span>` as `USD(1 234)`. Screenshots at a glance and the build both look fine. Never switch the option to `'jsx'` or remove it; if a project already uses `'jsx'`, add explicit `{" "}` wherever source text has a space between inline elements.
+2. **Close every non-void element explicitly.** Write `<div></div>`, `<span></span>`, `<p set:html={html}></p>`, `<script type="application/ld+json" set:html={ld}></script>` — never `<div />`, `<span />`, `<p ... />`, or `<script ... />`. Only real void elements (`img`, `br`, `hr`, `input`, `meta`, `link`, `source`, `track`, `wbr`) and Astro components may self-close. An unclosed component tag at the end of a file (`</BaseLayout`) is a compiler error. Check before finishing: `grep -rnE "<(p|span|div|script|li|a|h[1-6]|section|button|iframe|textarea|svg|path)\b[^>]*/>" src --include=*.astro` must be empty (SVG children such as `<path />` inside `Icons.astro` are allowed; exclude that file or review hits manually).
+3. **Scripts:** a plain `<script>` in an `.astro` file is bundled and deduplicated by Astro (TypeScript allowed, runs once as a module). Use `<script is:inline>` only for snippets that must stay verbatim in place (analytics, JSON-LD, code that depends on being inline). Any attribute other than `src` also makes a script inline.
+4. **Dependencies are declared, never hoisted.** Every package you import (e.g. `lenis`, `embla-carousel`) must be listed in `package.json` — don't rely on something that happens to sit in `node_modules` via Astro's own dependencies (Astro 7 pulls in `zod` 4, for example). Only the orchestrator installs packages, during the Foundation phase; builders in worktrees never run `npm install`. After any install run `npm ls vite`: there must be exactly **one** Vite 8 version, everything else `deduped` (two copies break `@tailwindcss/vite` hooks while the build still passes; fix with an explicit `vite@^8` in `devDependencies`).
+5. **Preview is a background server.** Use `npx astro preview --background` for QA, `npx astro preview status` / `logs` to inspect it, and `npx astro preview stop` before every rebuild-and-recheck — a second start reports "already running" and you would be comparing against a stale `dist/`. `npm run dev` is fine for iterating; final QA runs against the built `dist/`.
+6. **Output noise is not a regression.** CSS/JS chunk names come from Rolldown (e.g. `BaseLayout.<hash>.css`) and inline scripts are minified by Oxc; don't chase those when diffing builds.
+
+For anything else, read the types in `node_modules/astro/dist/types/public/` (e.g. `config.d.ts`) instead of relying on memory of Astro 4/5 APIs.
+
 ## Pre-Flight
 
 1. **Browser automation is required.** Check for available browser MCP tools (Chrome MCP, Playwright MCP, Browserbase MCP, Puppeteer MCP, etc.). Use whichever is available — if multiple exist, prefer Chrome MCP. If none are detected, ask the user which browser tool they have and how to connect it. This skill cannot work without browser automation.
 2. Parse `$ARGUMENTS` as one or more URLs. Normalize and validate each URL; if any are invalid, ask the user to correct them before proceeding. For each valid URL, verify it is accessible via your browser MCP tool.
-3. Verify the base project builds: `npm run build`. The Astro + Tailwind v4 scaffold should already be in place. If not, tell the user to set it up first.
+3. **Verify the project is on Astro 7 and builds.** Check `npx astro --version` (major must be 7) and that `astro.config.mjs` has `compressHTML: true`. If the project is on an older major, stop and tell the user; with approval, upgrade first in a separate commit (`npm install astro@^7 && npm install -D vite@^8 @tailwindcss/vite@latest tailwindcss@latest @astrojs/check@latest`, then `npm ls vite` must show one version) before cloning anything. Then run `npm run build`. The Astro 7 + Tailwind v4 scaffold should already be in place. If not, tell the user to set it up first.
 4. **Inspect the existing project before planning the clone.** If `src/pages/`, `src/layouts/`, `src/components/`, `src/styles/`, or `public/` already contain implemented work, treat the task as adapting a new page or subpage into the current site. Reuse the project's layouts, header/footer, navigation, buttons, cards, icons, utilities, design tokens, and asset conventions wherever they fit. Do not duplicate shared elements or create a parallel design system unless the target page genuinely needs a new pattern.
 5. **Inventory existing output.** List existing routes in `src/pages/`, page component folders, research artifacts, screenshots, and public assets. Distinguish the untouched template placeholder from existing cloned or user-authored work.
 6. **Write an output plan** listing every target URL, `<site-slug>`, `<page-slug>`, destination route file, artifact/screenshot/asset roots, downloader name, and whether any shared foundation file (`BaseLayout.astro`, `globals.css`, `Icons.astro`, shared components) must change. Save it as `docs/research/<site-slug>/OUTPUT_PLAN.md`. Resolve collisions, same-path query/fragment behavior, and multi-origin layout decisions with the user before editing.
@@ -426,8 +439,9 @@ Based on complexity, dispatch builder agent(s) in worktree(s):
 - Which shared components to import (`Icons.astro`, `cn()` from `@/lib/utils`, any existing layouts)
 - Which existing project components, style tokens, icons, and assets must be reused or extended
 - The target file path from the output plan (e.g., `src/components/docs--intro/HeroSection.astro`)
-- An explicit instruction not to modify files outside its target unless the spec says so (shared components, `globals.css`, other pages)
-- Instruction to verify with `npx astro check` before finishing
+- An explicit instruction not to modify files outside its target unless the spec says so (shared components, `globals.css`, other pages), and not to install packages
+- The Astro 7 Target Rules above, inline (explicit closing tags, `{" "}` only if the project isn't on `compressHTML: true`, script handling)
+- Instruction to verify with `npx astro check` and the self-closing-tag grep before finishing
 - For responsive behavior: the specific breakpoint values and what changes
 
 **Don't wait.** As soon as you've dispatched the builder(s) for one section, move to extracting the next section. Builders work in parallel in their worktrees while you continue extraction.
@@ -467,8 +481,10 @@ After assembly, do NOT declare the clone complete. Take side-by-side comparison 
    - Check the component spec file — was the value extracted correctly?
    - If the spec was wrong: re-extract from browser MCP, update the spec, fix the component
    - If the spec was right but the builder got it wrong: fix the component to match the spec
-5. Test all interactive behaviors: scroll through the page, click every button/tab, hover over interactive elements
-6. Verify smooth scroll feels right, header transitions work, tab switching works, animations play
+5. **Text-token diff.** Screenshots miss glued words and dropped sentences. Run `document.body.innerText.split(/\s+/).filter(Boolean)` via browser MCP on the original and on the clone (built `dist/` via `astro preview`), at the same viewport and in the same state, and compare the two token lists. Every difference must be explained (intentional change, per-session content) or fixed — a missing space between two tokens usually means a whitespace/`compressHTML` problem, a missing run of tokens means lost content. Save the result to `<artifact-root>/QA_TEXT_DIFF.md`.
+6. If the original has JSON-LD (`script[type="application/ld+json"]`) and the clone reproduces it, parse both and compare them as JSON, not as strings.
+7. Test all interactive behaviors: scroll through the page, click every button/tab, hover over interactive elements
+8. Verify smooth scroll feels right, header transitions work, tab switching works, animations play
 
 Only after this visual QA pass is the clone complete.
 
@@ -499,6 +515,8 @@ These are lessons from previous failed clones — each one cost hours of rework:
 - **Don't build mockup components for content that's actually videos/animations.** Check if a section uses `<video>`, Lottie, or canvas before building elaborate HTML mockups of what the video shows.
 - **Don't approximate CSS classes.** "It looks like `text-lg`" is wrong if the computed value is `18px` and `text-lg` is `18px/28px` but the actual line-height is `24px`. Extract exact values.
 - **Don't build everything in one monolithic commit.** The whole point of this pipeline is incremental progress with verified builds at each step.
+- **Don't write Astro 4/5-era code or trust old habits.** Self-closing `<div />`, missing `{" "}` under `'jsx'` whitespace rules, or relying on hoisted packages all compile and still ship a wrong page. Follow the Astro 7 Target Rules.
+- **Don't trust HTTP 200 or a green build as proof the page is right.** A page can build, return 200, and still have glued words or missing content — the text-token diff in Phase 5 is what catches it.
 - **Don't treat a new target as permission to replace the current site.** Preserve existing routes and per-page artifacts; ask before updating a route that already exists.
 - **Don't reference docs from builder prompts.** Each builder gets the CSS spec inline in its prompt — never "see DESIGN_TOKENS.md for colors." The builder should have zero need to read external docs.
 - **Don't skip asset extraction.** Without real images, videos, and fonts, the clone will always look fake regardless of how perfect the CSS is.
@@ -518,6 +536,6 @@ When done, report:
 - Total components created
 - Total spec files written (should match components)
 - Total assets downloaded (images, videos, SVGs, fonts)
-- Build status (`npm run build` result)
-- Visual QA results (any remaining discrepancies)
+- Build status (`npm run build` result) and Astro version used
+- Visual QA results and text-token diff results (any remaining discrepancies)
 - Any known gaps or limitations

@@ -8,12 +8,13 @@ alwaysApply: true
 <!-- BEGIN:astro-agent-rules -->
 # Astro, not Next.js
 
-This template uses Astro 6 (static SSG), not Next.js. If your prior session or training data assumes Next.js here, discard that assumption. Read the Astro docs and the types in `node_modules/astro/` before writing code. Key differences to remember:
+This template uses Astro 7 (static SSG), not Next.js. If your prior session or training data assumes Next.js or an older Astro major (4/5/6) here, discard that assumption — clones are written for Astro 7 directly. Read the Astro docs and the types in `node_modules/astro/` before writing code. Key differences to remember:
 
 - Pages live in `src/pages/*.astro`, not `src/app/*.tsx`. No App Router, no file-based route handlers.
 - No React by default. Components are `.astro` files. If interactivity is required, prefer a `<script>` block in the `.astro` file over reaching for a UI framework.
 - No `next/font`, `next/image`, `next/link`, `"use client"`, or any `next/*` import. Fonts come from Google Fonts via `<link>` in the layout. Images are plain `<img>` (or Astro's `<Image />` from `astro:assets` when needed).
 - Build output goes to `dist/` (static HTML + assets). No `.next/` directory, no standalone server.
+- Astro 7 specifics: keep `compressHTML: true` in `astro.config.mjs` (the `'jsx'` default glues words across line breaks), close every non-void element explicitly (no `<div />`, `<p set:html={...} />`, `<script ... />`), declare every imported package in `package.json`, and keep a single Vite version (`npm ls vite`). Full rules: "Astro 7 Target Rules" in `.claude/skills/clone-website/SKILL.md`.
 <!-- END:astro-agent-rules -->
 
 # Website Reverse-Engineer Template
@@ -22,7 +23,7 @@ This template uses Astro 6 (static SSG), not Next.js. If your prior session or t
 A reusable template for reverse-engineering any website into a clean, modern Astro codebase using AI coding agents. The Astro + Tailwind v4 base is pre-scaffolded — just run `/clone-website <url1> [<url2> ...]`.
 
 ## Tech Stack
-- **Framework:** Astro 6 (static SSG, Vite, TypeScript strict)
+- **Framework:** Astro 7 (static SSG, Vite 8 + Rolldown, TypeScript strict, `compressHTML: true`)
 - **UI:** Native `.astro` components (no React, no shadcn/ui)
 - **Icons:** Inline SVGs extracted from the target site, rendered from `src/components/Icons.astro`
 - **Styling:** Tailwind CSS v4 via `@tailwindcss/vite` with oklch design tokens
