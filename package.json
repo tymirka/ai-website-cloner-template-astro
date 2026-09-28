@@ -33,6 +33,7 @@
     "astro": "astro",
     "lint": "eslint .",
     "typecheck": "astro check",
+    "i18n:missing": "node scripts/i18n-missing.mjs",
     "check": "npm run lint && npm run typecheck && npm run build"
   },
   "dependencies": {

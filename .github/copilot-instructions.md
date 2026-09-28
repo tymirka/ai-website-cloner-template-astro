@@ -33,6 +33,8 @@ A reusable template for reverse-engineering any website into a clean, modern Ast
 - `npm run lint` — ESLint check
 - `npm run typecheck` — `astro check` (TypeScript + `.astro` diagnostics)
 - `npm run check` — Run lint + typecheck + build
+- `npm run i18n:missing` — Multilingual projects: write missing translations (keys + source text, missing content files) to `docs/i18n/MISSING_TRANSLATIONS.md`
+- `./LOOP.sh <url1> [<url2> ...]` — Run `/clone-website` for each URL in turn (prose pages into content collections), then write the missing-translations report
 
 ## Code Style
 - TypeScript strict mode, no `any`
@@ -55,6 +57,14 @@ A reusable template for reverse-engineering any website into a clean, modern Ast
 - When cloning a subpage into an existing site, preserve the site's established structure and route conventions, and integrate the subpage with the same visual language and reusable building blocks.
 - Never delete or overwrite an existing route, another page's research/screenshots/assets, or shared tokens that other pages use without explicit approval. Each cloned page keeps its artifacts in `docs/research/<site-slug>/<page-slug>/` and `docs/design-references/<site-slug>/<page-slug>/`; page-only sections go in `src/components/<page-slug>/`, page-only assets in `public/images/<page-slug>/`.
 
+## Multilingual Projects
+Applies only when the cloned site is multilingual, `src/i18n/` already exists, or the user asks for it; single-language clones keep copy inline.
+- Routing mirrors the target through Astro's `i18n` config (`locales`, `defaultLocale`, `routing.prefixDefaultLocale`); each locale has its own route file at the exact localized path, rendering one shared page component per translation group.
+- UI copy goes through `useTranslations(Astro.currentLocale)` / `t("namespace.key")` from `src/i18n/index.ts`, with one `src/i18n/<locale>.ts` per locale; the default locale defines the key shape.
+- Prose pages live in content collections: `src/content/<collection>/<entry>/<locale>.md`, with the target's exact URL in the `path` frontmatter field.
+- Never machine-translate. Missing strings fall back to the default locale, missing content files mean no route; `npm run i18n:missing` lists both for human translation.
+- Details: "Multilingual Sites" in `.claude/skills/clone-website/SKILL.md`.
+
 ## Project Structure
 ```
 src/
@@ -67,6 +77,9 @@ src/
   lib/
     utils.ts        # cn() utility
   types/            # TypeScript interfaces
+  i18n/             # Multilingual only: index.ts (t(), routes) + <locale>.ts per locale
+  content/          # Multilingual prose: <collection>/<entry>/<locale>.md
+  content.config.ts # Content collection definitions (when src/content/ is used)
 public/
   favicon.ico
   images/           # Downloaded images from target site
@@ -75,7 +88,9 @@ public/
 docs/
   research/         # Inspection output (design tokens, components, layout)
   design-references/ # Screenshots and visual references
-scripts/            # Asset download scripts
+  i18n/             # MISSING_TRANSLATIONS.md report (multilingual only)
+scripts/            # Asset download scripts, i18n-missing.mjs
+LOOP.sh             # Clone a list of URLs one by one
 astro.config.mjs    # Astro + Tailwind v4 (Vite plugin) config
 ```
 

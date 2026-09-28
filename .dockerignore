@@ -59,3 +59,7 @@ docker-compose.yml
 README.md
 CHANGELOG.md
 LICENSE
+
+# Clone loop (not needed at runtime)
+LOOP.sh
+logs

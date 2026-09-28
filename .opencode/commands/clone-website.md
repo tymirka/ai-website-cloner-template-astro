@@ -21,6 +21,7 @@ The target is whatever page `$ARGUMENTS` resolves to. Clone exactly what's visib
 - **In scope:** Visual layout and styling, component structure and interactions, responsive design, mock data for demo purposes
 - **Out of scope:** Real backend / database, authentication, real-time features, SEO optimization, accessibility audit
 - **Customization:** None — pure emulation
+- **Languages:** Single-language by default — copy stays inline in `.astro` markup. Switch to the i18n workflow in [Multilingual Sites](#multilingual-sites) only when the target is multilingual, the project already has `src/i18n/`, or the user asks for it.
 
 If the user provides additional instructions (specific fidelity level, customizations, extra context), honor those over the defaults.
 
@@ -32,6 +33,7 @@ Before extraction, assign each target:
 
 - A `<site-slug>`: the lowercase hostname with `www.` dropped and non-alphanumerics replaced by `-`, plus `-<port>` for a non-default port (e.g. `example-com`).
 - A `<page-slug>`: `root` for `/`; otherwise the pathname segments, lowercased, with characters outside `[a-z0-9-]` replaced by `-`, joined by `--` (e.g. `/docs/getting-started` → `docs--getting-started`). If two planned or existing targets would get the same slug, or the target is stateful via query/fragment, append `-` plus the first 8 lowercase hex characters of SHA-256 over the normalized pathname and query/fragment. Never rely on lossy slugging alone when it collides.
+- For a multilingual site, one `<page-slug>` per **translation group** — the same page in every language (`/o-nas`, `/en/about`, `/de/uber-uns`) — derived from the default-locale path without its locale prefix. A translation group gets one artifact root, one component folder, and one page component; only the route files and screenshots are per locale.
 - An artifact root: `docs/research/<site-slug>/<page-slug>/` (holds `BEHAVIORS.md`, `PAGE_TOPOLOGY.md`, `components/*.spec.md`).
 - A screenshot root: `docs/design-references/<site-slug>/<page-slug>/`.
 - An asset root: `public/images/<page-slug>/` and `public/videos/<page-slug>/` for page-only assets; assets used on more than one page of the same site (logo, header/footer imagery, fonts) go in `public/images/shared/`, `public/videos/shared/`, `public/fonts/`, `public/seo/`.
@@ -62,6 +64,115 @@ These rules hold for every file you or a builder writes. They come from real Ast
 6. **Output noise is not a regression.** CSS/JS chunk names come from Rolldown (e.g. `BaseLayout.<hash>.css`) and inline scripts are minified by Oxc; don't chase those when diffing builds.
 
 For anything else, read the types in `node_modules/astro/dist/types/public/` (e.g. `config.d.ts`) instead of relying on memory of Astro 4/5 APIs.
+
+## Multilingual Sites
+
+Skip this section for single-language targets. It applies when the target is multilingual — `<link rel="alternate" hreflang>` for two or more languages, a language switcher that leads to other-language versions, or locale-prefixed URLs (`/en/…`, `/de/…`) — when the project already has `src/i18n/`, or when the user asks for it. A lone `<html lang="pl">` does not make a site multilingual.
+
+The setup below is the default for a project that has no i18n yet. If the project already has one — a different `t()` signature, `src/pages/[locale]/` routes, content in a root `content/` folder, Markdown parsed with `gray-matter` — keep using it for new pages and only apply the rules that don't depend on the mechanism: route fidelity, one component per translation group, no machine translation, missing-translations report.
+
+### Detect and document
+
+During reconnaissance, for every target page:
+- Read `<html lang>`, every `<link rel="alternate" hreflang>` (including `x-default`), `<link rel="canonical">`, and the language switcher's links.
+- Visit each language version and record its exact URL — translated slugs are common (`/o-nas` ↔ `/en/about`).
+- Save to `docs/research/<site-slug>/I18N.md`: locale codes, default locale, URL strategy (path prefix, default locale prefixed or not), the translation-group table (`<page-slug>` → URL per locale), switcher location and behavior, RTL locales, and which pages exist only in some locales.
+
+If the target switches language by subdomain, separate domain, query string (`?lang=en`), or cookie, stop and ask the user: a static Astro build can reproduce path prefixes but not these, so they need a decision (separate builds per domain, or path prefixes instead).
+
+### Configure routing
+
+Mirror the target's strategy in `astro.config.mjs`:
+
+```js
+i18n: {
+  locales: ['pl', 'en'],                    // every locale the target serves
+  defaultLocale: 'pl',                      // the locale the canonical/root URL serves
+  routing: { prefixDefaultLocale: false },  // true if the target prefixes it (/pl/...)
+},
+```
+
+Route files are per locale and live at the exact localized path (`src/pages/o-nas.astro`, `src/pages/en/about.astro`). Each one is a thin wrapper that renders the translation group's shared page component (`src/components/<page-slug>/<Name>Page.astro`); `Astro.currentLocale` then resolves the locale from the URL. Don't create a route for a locale in which the target doesn't serve that page.
+
+`<html lang>` comes from `Astro.currentLocale` (add `dir="rtl"` for RTL locales). Reproduce the target's `hreflang` alternates, `x-default`, and canonical in `BaseLayout.astro` from the translation group's path map; the language switcher links to the counterpart page, not to the other locale's homepage.
+
+### UI copy: `src/i18n/`
+
+Every user-facing string of a multilingual clone — headings, body, buttons, `alt`, `aria-label`, `placeholder`, `title`, meta title/description — goes through `t()`. Scaffold once, in the Foundation phase:
+
+```ts
+// src/i18n/pl.ts — default locale; its shape is the contract. No `as const` (that would freeze the values).
+const pl = {
+  meta: { title: "O nas", description: "…" },
+  about: { heading: "O nas", cta: "Kontakt" },
+};
+export default pl;
+
+// src/i18n/en.ts — every other locale; unknown keys are compile errors, missing keys are allowed.
+import type { DeepPartial, Translations } from "./index.ts";
+const en = {
+  meta: { title: "About us", description: "…" },
+  about: { heading: "About us" },
+} satisfies DeepPartial<Translations>;
+export default en;
+
+// src/i18n/index.ts
+import pl from "./pl.ts";
+import en from "./en.ts";
+export type Translations = typeof pl;
+export type DeepPartial<T> = { [K in keyof T]?: T[K] extends string ? string : DeepPartial<T[K]> };
+type Leaves<T, P extends string = ""> = {
+  [K in keyof T & string]: T[K] extends string ? `${P}${K}` : Leaves<T[K], `${P}${K}.`>;
+}[keyof T & string];
+export type TranslationKey = Leaves<Translations>;
+export const defaultLocale = "pl";
+const dictionaries: Record<string, DeepPartial<Translations>> = { pl, en };
+
+function lookup(dict: unknown, key: string): string | undefined {
+  const value = key.split(".").reduce<unknown>(
+    (node, part) => (node && typeof node === "object" ? (node as Record<string, unknown>)[part] : undefined),
+    dict,
+  );
+  return typeof value === "string" ? value : undefined;
+}
+
+// Missing keys fall back to the default locale; scripts/i18n-missing.mjs reports them.
+export function useTranslations(locale: string | undefined) {
+  const dict = dictionaries[locale ?? defaultLocale] ?? dictionaries[defaultLocale];
+  return (key: TranslationKey): string => {
+    const value = lookup(dict, key) ?? lookup(dictionaries[defaultLocale], key);
+    if (value === undefined) throw new Error(`Missing i18n key: ${key}`);
+    return value;
+  };
+}
+
+// Localized path per translation group — used by the switcher, hreflang and internal links.
+export const routes = {
+  about: { pl: "/o-nas", en: "/en/about" },
+} satisfies Record<string, Record<string, string>>;
+```
+
+In components: `const t = useTranslations(Astro.currentLocale);` then `{t("about.heading")}`. A typo in a key fails `astro check`. Keep one top-level namespace per page component or shared block (`nav`, `footer`, `about`, …). `scripts/i18n-missing.mjs` relies on `export const defaultLocale = "…"` in `index.ts` and one `<locale>.ts` per locale (default or named export).
+
+Locale strings are plain text, never HTML. For a sentence with an inline link, put the parts in separate keys and compose them on **one line** in the template, so the spaces survive: `{t("contact.before")} <a href={…}>{t("contact.link")}</a> {t("contact.after")}`. Long rich prose belongs in a content collection, not in `t()`.
+
+### Prose pages: content collections
+
+Legal pages, articles, and other prose-heavy pages go into Markdown content collections, one directory per document and one file per locale:
+
+```
+src/content/<collection>/<entry>/<locale>.md   # e.g. src/content/legal/privacy-policy/pl.md
+```
+
+`<entry>` is a shared English kebab-case key (`privacy-policy`), the same for every language. Frontmatter holds `title`, `description`, `locale`, and `path` — the exact URL the target serves this language version at (`/polityka-prywatnosci`, `/en/privacy-policy`), so translated slugs are preserved. Define collections in `src/content.config.ts` with `glob()` from `astro/loaders` and `z` from `astro/zod`, and render them from a route such as `src/pages/[...path].astro` whose `getStaticPaths()` maps each entry's `path` (without the leading `/`) to `params.path` and renders it with `render(entry)` from `astro:content`. If the project already has a rest route at that level, ask before adding one. No `gray-matter`, `marked`, or other Markdown packages — content collections parse frontmatter and render Markdown natively.
+
+### Missing translations
+
+Never machine-translate. Every locale's copy is extracted 1:1 from that locale's own URL on the target; text the target itself leaves untranslated is copied as shown. When the target has no version of a string or page in some locale:
+- UI string: leave the key out of that locale file — `t()` falls back to the default locale.
+- Content entry: don't create `<locale>.md` — the page simply has no route in that locale.
+
+After the build, run `node scripts/i18n-missing.mjs`. It writes `docs/i18n/MISSING_TRANSLATIONS.md` listing every missing UI key (with its default-locale source text) and every missing content file, so a human can translate them later.
 
 ## Pre-Flight
 
@@ -186,6 +297,8 @@ Extract these from the page before doing anything else:
 
 **Global UI patterns** — Identify any site-wide CSS or JS: custom scrollbar hiding, scroll-snap on the page container, global keyframe animations, backdrop filters, gradients used as overlays, **smooth scroll libraries** (Lenis, Locomotive Scroll — check for `.lenis`, `.locomotive-scroll`, or custom scroll container classes). Merge truly site-wide behavior into `src/styles/globals.css`; keep page-specific behavior scoped to the page (a `<style>` block or a wrapper class) so existing routes don't change unexpectedly. Note any libraries that need to be installed.
 
+**Languages** — Check whether the target is multilingual (`hreflang` alternates, language switcher, locale-prefixed URLs). If it is, run the detection pass from [Multilingual Sites](#multilingual-sites), write `I18N.md`, and take the full-page screenshots for every locale into `<screenshot-root>/<locale>/`.
+
 ### Mandatory Interaction Sweep
 
 This is a dedicated pass AFTER screenshots and BEFORE anything else. Its purpose is to discover every behavior on the page — many of which are invisible in a static screenshot.
@@ -233,7 +346,8 @@ This is sequential per origin. Do it yourself (not delegated to an agent) since 
 3. **Create TypeScript interfaces** in `src/types/` for the content structures you've observed; reuse existing types when their contracts match, and don't change existing ones in ways that break other pages
 4. **Extract SVG icons** — find all inline `<svg>` elements on the page, deduplicate them against the icons already in `src/components/Icons.astro`, and add only new ones keyed by a `name` prop (e.g., `"search"`, `"arrow-right"`, `"logo"`). Never rename or redraw an existing icon name another page uses. For very large or complex icons, split them into dedicated `src/components/icons/<IconName>.astro` files.
 5. **Download assets into the planned locations** — write and run the page's uniquely named script (`scripts/download-assets-<site-slug>-<page-slug>.mjs`) that downloads images, videos, and other binary assets into the page's asset root or the shared folders from the output plan. Never overwrite another page's downloader or a different file with the same name.
-6. Verify every previously existing route still builds, then run `npm run build`
+6. **Multilingual only:** add the `i18n` block to `astro.config.mjs`, scaffold `src/i18n/index.ts` and one `src/i18n/<locale>.ts` per locale (plus `src/content.config.ts` if prose pages are in scope), and make `BaseLayout.astro` set `<html lang>`, `hreflang` alternates, and canonical — see [Multilingual Sites](#multilingual-sites)
+7. Verify every previously existing route still builds, then run `npm run build`
 
 ### Asset Discovery Script Pattern
 
@@ -415,6 +529,10 @@ For each section (or sub-component, if you're breaking it up), create a spec fil
 ## Text Content (verbatim)
 <All text content, copy-pasted from the live site>
 
+## i18n Keys (multilingual sites only; otherwise "N/A")
+- Namespace: `<namespace>`
+- `<namespace>.<key>` → pl: "<verbatim>", en: "<verbatim from the en URL>" (omit a locale the target doesn't provide — never translate it yourself)
+
 ## Responsive Behavior
 - **Desktop (1440px):** <layout description>
 - **Tablet (768px):** <what changes — e.g., "maintains 2-column, gap reduces to 16px">
@@ -440,6 +558,7 @@ Based on complexity, dispatch builder agent(s) in worktree(s):
 - The target file path from the output plan (e.g., `src/components/docs--intro/HeroSection.astro`)
 - An explicit instruction not to modify files outside its target unless the spec says so (shared components, `globals.css`, other pages), and not to install packages
 - The Astro 7 Target Rules above, inline (explicit closing tags, `{" "}` only if the project isn't on `compressHTML: true`, script handling)
+- **Multilingual only:** the i18n key list, and the instruction to render every user-facing string via `const t = useTranslations(Astro.currentLocale)` / `{t("namespace.key")}` with no literal copy in the template. You add the spec's keys to `src/i18n/<locale>.ts` yourself before dispatch, so parallel builders never edit the locale files
 - Instruction to verify with `npx astro check` and the self-closing-tag grep before finishing
 - For responsive behavior: the specific breakpoint values and what changes
 
@@ -464,6 +583,7 @@ After all sections are built and merged, wire everything together in the exact d
 - Implement the page-level layout from your topology doc (scroll containers, column structures, sticky positioning, z-index layering)
 - Connect real content to component props
 - Reuse the project's existing header, footer, navigation, layout wrappers, and shared UI components unless the target page intentionally differs
+- **Multilingual only:** assemble the shared page component once per translation group, then add one thin route file per locale at the exact localized path from `I18N.md`, and register the group's paths in `routes` in `src/i18n/index.ts`
 - Implement page-level behaviors inside `<script>` blocks in the page or layout: scroll snap, scroll-driven animations, dark-to-light transitions, intersection observers, smooth scroll (Lenis etc.)
 - If the page links to other already-cloned pages, point those links at their local routes
 - Confirm all routes that existed before this run are still present in `src/pages/` and `dist/` and were not unintentionally changed
@@ -484,6 +604,7 @@ After assembly, do NOT declare the clone complete. Take side-by-side comparison 
 6. If the original has JSON-LD (`script[type="application/ld+json"]`) and the clone reproduces it, parse both and compare them as JSON, not as strings.
 7. Test all interactive behaviors: scroll through the page, click every button/tab, hover over interactive elements
 8. Verify smooth scroll feels right, header transitions work, tab switching works, animations play
+9. **Multilingual only:** repeat the screenshot comparison and the text-token diff for **every locale** against that locale's URL on the target. Check that each locale route exists exactly where `I18N.md` says, that `<html lang>`, `hreflang`, and canonical match the target, and that the language switcher leads to the counterpart page. Then run `node scripts/i18n-missing.mjs` and review `docs/i18n/MISSING_TRANSLATIONS.md`
 
 Only after this visual QA pass is the clone complete.
 
@@ -501,6 +622,7 @@ Before dispatching ANY builder agent, verify you can check every box. If you can
 - [ ] All images in the section are identified (including overlays and layered compositions)
 - [ ] Responsive behavior is documented for at least desktop and mobile
 - [ ] Text content is verbatim from the site, not paraphrased
+- [ ] Multilingual only: every string has an i18n key with values taken from each locale's own URL, and those keys are already in `src/i18n/<locale>.ts`
 - [ ] Existing project components, tokens, layouts, icons, and assets have been considered for reuse
 - [ ] The builder prompt is under ~150 lines of spec; if over, the section needs to be split
 
@@ -516,6 +638,7 @@ These are lessons from previous failed clones — each one cost hours of rework:
 - **Don't build everything in one monolithic commit.** The whole point of this pipeline is incremental progress with verified builds at each step.
 - **Don't write Astro 4/5-era code or trust old habits.** Self-closing `<div />`, missing `{" "}` under `'jsx'` whitespace rules, or relying on hoisted packages all compile and still ship a wrong page. Follow the Astro 7 Target Rules.
 - **Don't trust HTTP 200 or a green build as proof the page is right.** A page can build, return 200, and still have glued words or missing content — the text-token diff in Phase 5 is what catches it.
+- **Don't translate copy yourself or clone one language version as if it were a separate page.** On a multilingual site each locale's text comes from that locale's URL; gaps go to `MISSING_TRANSLATIONS.md`, and all language versions of a page share one component.
 - **Don't treat a new target as permission to replace the current site.** Preserve existing routes and per-page artifacts; ask before updating a route that already exists.
 - **Don't reference docs from builder prompts.** Each builder gets the CSS spec inline in its prompt — never "see DESIGN_TOKENS.md for colors." The builder should have zero need to read external docs.
 - **Don't skip asset extraction.** Without real images, videos, and fonts, the clone will always look fake regardless of how perfect the CSS is.
@@ -535,6 +658,7 @@ When done, report:
 - Total components created
 - Total spec files written (should match components)
 - Total assets downloaded (images, videos, SVGs, fonts)
+- Multilingual only: locales, translation groups with their per-locale routes, and the missing-translation counts from `docs/i18n/MISSING_TRANSLATIONS.md`
 - Build status (`npm run build` result) and Astro version used
 - Visual QA results and text-token diff results (any remaining discrepancies)
 - Any known gaps or limitations

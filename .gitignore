@@ -47,3 +47,6 @@ Thumbs.db
 
 # Local temp files
 temp/
+
+# LOOP.sh run logs
+logs/
