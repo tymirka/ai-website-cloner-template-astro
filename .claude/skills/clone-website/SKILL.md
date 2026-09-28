@@ -9,7 +9,7 @@ user-invocable: true
 
 You are about to reverse-engineer and rebuild **$ARGUMENTS** as pixel-perfect clones.
 
-When multiple URLs are provided, process them independently and in parallel where possible, while keeping each site's extraction artifacts isolated in dedicated folders (for example, `docs/research/<hostname>/`).
+When multiple URLs are provided, preserve every pathname as a distinct route and isolate each target's research, screenshots, page-only components, and assets. URLs that differ only by query string or fragment share a pathname, so resolve their route and state behavior explicitly in the output plan. Parallelize page work only after the shared foundation and output plan are fixed so concurrent builders cannot overwrite one another.
 
 This is not a two-phase process (inspect then build). You are a **foreman walking the job site** — as you inspect each section of the page, you write a detailed specification to a file, then hand that file to a specialist builder agent with everything they need. Extraction and construction happen in parallel, but extraction is meticulous and produces auditable artifacts.
 
@@ -24,14 +24,42 @@ The target is whatever page `$ARGUMENTS` resolves to. Clone exactly what's visib
 
 If the user provides additional instructions (specific fidelity level, customizations, extra context), honor those over the defaults.
 
+## Output Isolation and Route Preservation
+
+Treat every target URL as durable project output, not as permission to replace whatever was built previously. Isolate per-page artifacts, but keep reusable site building blocks shared (see Existing Project Adaptation in `AGENTS.md`).
+
+Before extraction, assign each target:
+
+- A `<site-slug>`: the lowercase hostname with `www.` dropped and non-alphanumerics replaced by `-`, plus `-<port>` for a non-default port (e.g. `example-com`).
+- A `<page-slug>`: `root` for `/`; otherwise the pathname segments, lowercased, with characters outside `[a-z0-9-]` replaced by `-`, joined by `--` (e.g. `/docs/getting-started` → `docs--getting-started`). If two planned or existing targets would get the same slug, or the target is stateful via query/fragment, append `-` plus the first 8 lowercase hex characters of SHA-256 over the normalized pathname and query/fragment. Never rely on lossy slugging alone when it collides.
+- An artifact root: `docs/research/<site-slug>/<page-slug>/` (holds `BEHAVIORS.md`, `PAGE_TOPOLOGY.md`, `components/*.spec.md`).
+- A screenshot root: `docs/design-references/<site-slug>/<page-slug>/`.
+- An asset root: `public/images/<page-slug>/` and `public/videos/<page-slug>/` for page-only assets; assets used on more than one page of the same site (logo, header/footer imagery, fonts) go in `public/images/shared/`, `public/videos/shared/`, `public/fonts/`, `public/seo/`.
+- A component location: site chrome and reusable blocks (header, footer, nav, buttons, cards) in `src/components/`; sections unique to one page in `src/components/<page-slug>/` so two pages' `HeroSection.astro` never collide.
+- A downloader script: `scripts/download-assets-<site-slug>-<page-slug>.mjs`.
+- An Astro route file.
+
+Before writing, verify that every planned route, artifact root, screenshot root, page component folder, asset path, and downloader filename is unique or is an explicitly shared location. A downloader must never overwrite an existing file in `public/` with different content — skip identical files, and rename or ask on a mismatch.
+
+Routing defaults:
+
+- For the first single-URL clone in an untouched template (where `src/pages/index.astro` is still the "Clone target not yet built" placeholder), the placeholder may be replaced so the clone is available at `/`.
+- For multiple URLs from the same origin, or any later clone added to a project that already contains cloned/user-authored pages, preserve the normalized source pathname as the Astro route, following the project's existing file convention (e.g. `/docs/intro` → `src/pages/docs/intro.astro` or `src/pages/docs/intro/index.astro`, whichever the project already uses). Verify in `dist/` that the built route resolves at the exact normalized URL before completion.
+- Astro gives file names routing meaning: files or folders starting with `_` are excluded from routing, and `[param]` / `[...rest]` create dynamic routes. If a source path segment starts with `_` or contains `[`, `]`, or characters that are unsafe in file names, stop and ask the user which route to use instead of inventing one.
+- Inspect every existing file in `src/pages/` before writing. Never delete or replace a non-placeholder route, page component folder, research folder, screenshot, or asset folder unless the user explicitly approves that exact replacement.
+- If the planned route already exists, stop and ask whether to update that route, choose another route, or skip it.
+- URLs from different origins may require incompatible fonts, global CSS, and layouts. Before modifying files, ask whether the user wants separate Astro projects (recommended) or an intentionally combined multi-site project with a per-site layout (`src/layouts/<SiteName>Layout.astro`) and site-scoped tokens. Do not silently mix global foundations.
+
 ## Pre-Flight
 
 1. **Browser automation is required.** Check for available browser MCP tools (Chrome MCP, Playwright MCP, Browserbase MCP, Puppeteer MCP, etc.). Use whichever is available — if multiple exist, prefer Chrome MCP. If none are detected, ask the user which browser tool they have and how to connect it. This skill cannot work without browser automation.
 2. Parse `$ARGUMENTS` as one or more URLs. Normalize and validate each URL; if any are invalid, ask the user to correct them before proceeding. For each valid URL, verify it is accessible via your browser MCP tool.
 3. Verify the base project builds: `npm run build`. The Astro + Tailwind v4 scaffold should already be in place. If not, tell the user to set it up first.
 4. **Inspect the existing project before planning the clone.** If `src/pages/`, `src/layouts/`, `src/components/`, `src/styles/`, or `public/` already contain implemented work, treat the task as adapting a new page or subpage into the current site. Reuse the project's layouts, header/footer, navigation, buttons, cards, icons, utilities, design tokens, and asset conventions wherever they fit. Do not duplicate shared elements or create a parallel design system unless the target page genuinely needs a new pattern.
-5. Create the output directories if they don't exist: `docs/research/`, `docs/research/components/`, `docs/design-references/`, `scripts/`. For multiple clones, also prepare per-site folders like `docs/research/<hostname>/` and `docs/design-references/<hostname>/`.
-6. When working with multiple sites in one command, optionally confirm whether to run them in parallel (recommended, if resources allow) or sequentially to avoid overload.
+5. **Inventory existing output.** List existing routes in `src/pages/`, page component folders, research artifacts, screenshots, and public assets. Distinguish the untouched template placeholder from existing cloned or user-authored work.
+6. **Write an output plan** listing every target URL, `<site-slug>`, `<page-slug>`, destination route file, artifact/screenshot/asset roots, downloader name, and whether any shared foundation file (`BaseLayout.astro`, `globals.css`, `Icons.astro`, shared components) must change. Save it as `docs/research/<site-slug>/OUTPUT_PLAN.md`. Resolve collisions, same-path query/fragment behavior, and multi-origin layout decisions with the user before editing.
+7. Create only the planned per-page directories plus `scripts/` if needed.
+8. For multiple pages from one origin, build the shared foundation once, sequentially, before parallel page work. Optionally confirm whether to run page builders in parallel (recommended if resources allow) or sequentially to avoid overload.
 
 ## Guiding Principles
 
@@ -110,7 +138,7 @@ For scroll-dependent elements:
 
 ### 8. Spec Files Are the Source of Truth
 
-Every component gets a specification file in `docs/research/components/` BEFORE any builder is dispatched. This file is the contract between your extraction work and the builder agent. The builder receives the spec file contents inline in its prompt — the file also persists as an auditable artifact that the user (or you) can review if something looks wrong.
+Every component gets a specification file under that page's artifact root (`docs/research/<site-slug>/<page-slug>/components/`) BEFORE any builder is dispatched. This file is the contract between your extraction work and the builder agent. The builder receives the spec file contents inline in its prompt — the file also persists as an auditable artifact that the user (or you) can review if something looks wrong.
 
 The spec file is not optional. It is not a nice-to-have. If you dispatch a builder without first writing a spec file, you are shipping incomplete instructions based on whatever you can remember from a browser MCP session, and the builder will guess to fill gaps.
 
@@ -126,24 +154,24 @@ Navigate to the target URL with browser MCP.
 Before extracting the target page in detail, inventory the current Astro project:
 - Review `src/pages/` to identify the route, page structure, and naming conventions the new subpage should follow.
 - Review `src/layouts/`, `src/components/`, `src/styles/globals.css`, `src/components/Icons.astro`, and `public/` for reusable elements, tokens, icons, and assets.
-- Document which existing components must be reused or extended in `docs/research/PAGE_TOPOLOGY.md` or the relevant component spec.
+- Document which existing components must be reused or extended in `<artifact-root>/PAGE_TOPOLOGY.md` or the relevant component spec.
 - If the target is a subpage of an already cloned site, adapt it to the existing header, footer, navigation, layout containers, typography tokens, and component patterns instead of rebuilding those from scratch.
 
 ### Screenshots
 - Take **full-page screenshots** at desktop (1440px) and mobile (390px) viewports
-- Save to `docs/design-references/` with descriptive names
+- Save to that page's screenshot root (`docs/design-references/<site-slug>/<page-slug>/`) with descriptive names
 - These are your master reference — builders will receive section-specific crops/screenshots later
 
 ### Global Extraction
 Extract these from the page before doing anything else:
 
-**Fonts** — Inspect `<link>` tags for Google Fonts or self-hosted fonts. Check computed `font-family` on key elements (headings, body, code, labels). Document every family, weight, and style actually used. Configure them in `src/layouts/BaseLayout.astro` via `<link>` tags (Google Fonts) or by placing self-hosted font files in `public/fonts/` and adding `@font-face` rules in `src/styles/globals.css`.
+**Fonts** — Inspect `<link>` tags for Google Fonts or self-hosted fonts. Check computed `font-family` on key elements (headings, body, code, labels). Document every family, weight, and style actually used. Configure them in `src/layouts/BaseLayout.astro` via `<link>` tags (Google Fonts) or by placing self-hosted font files in `public/fonts/` and adding `@font-face` rules in `src/styles/globals.css`. Add missing families/weights without removing ones existing routes still use.
 
-**Colors** — Extract the site's color palette from computed styles across the page. Update `src/styles/globals.css` with the target's actual colors in the `:root` and `.dark` CSS variable blocks. Keep the existing token names (background, foreground, primary, muted, etc.) where colors fit semantically. Add custom properties for colors that don't map to the existing tokens.
+**Colors** — Extract the site's color palette from computed styles across the page. Merge the target's actual colors into `src/styles/globals.css` (`:root` and `.dark` blocks) without removing or changing tokens that existing routes depend on. Keep the existing token names (background, foreground, primary, muted, etc.) where colors fit semantically. Add custom properties for colors that don't map to the existing tokens. If a later page genuinely needs a different value for an existing token, scope the override to that page's wrapper instead of changing it globally.
 
-**Favicons & Meta** — Download favicons, apple-touch-icons, OG images, webmanifest to `public/seo/`. Update `<head>` metadata in `src/layouts/BaseLayout.astro`.
+**Favicons & Meta** — Download favicons, apple-touch-icons, OG images, webmanifest to `public/seo/`. Put metadata in `src/layouts/BaseLayout.astro` only when it applies to every route; pass page-specific title, description, and OG image from the page as layout props.
 
-**Global UI patterns** — Identify any site-wide CSS or JS: custom scrollbar hiding, scroll-snap on the page container, global keyframe animations, backdrop filters, gradients used as overlays, **smooth scroll libraries** (Lenis, Locomotive Scroll — check for `.lenis`, `.locomotive-scroll`, or custom scroll container classes). Add these to `src/styles/globals.css` and note any libraries that need to be installed.
+**Global UI patterns** — Identify any site-wide CSS or JS: custom scrollbar hiding, scroll-snap on the page container, global keyframe animations, backdrop filters, gradients used as overlays, **smooth scroll libraries** (Lenis, Locomotive Scroll — check for `.lenis`, `.locomotive-scroll`, or custom scroll container classes). Merge truly site-wide behavior into `src/styles/globals.css`; keep page-specific behavior scoped to the page (a `<style>` block or a wrapper class) so existing routes don't change unexpectedly. Note any libraries that need to be installed.
 
 ### Mandatory Interaction Sweep
 
@@ -171,7 +199,7 @@ This is a dedicated pass AFTER screenshots and BEFORE anything else. Its purpose
 - Mobile: 390px
 - At each width, note which sections change layout (column → stack, sidebar disappears, etc.) and at approximately which breakpoint the change occurs.
 
-Save all findings to `docs/research/BEHAVIORS.md`. This is your behavior bible — reference it when writing every component spec.
+Save all findings to `<artifact-root>/BEHAVIORS.md`. This is your behavior bible — reference it when writing every component spec.
 
 ### Page Topology
 Map out every distinct section of the page from top to bottom. Give each a working name. Document:
@@ -181,18 +209,18 @@ Map out every distinct section of the page from top to bottom. Give each a worki
 - Dependencies between sections (e.g., a floating nav that overlays everything)
 - **The interaction model** of each section (static, click-driven, scroll-driven, time-driven)
 
-Save this as `docs/research/PAGE_TOPOLOGY.md` — it becomes your assembly blueprint.
+Save this as `<artifact-root>/PAGE_TOPOLOGY.md` — it becomes your assembly blueprint.
 
 ## Phase 2: Foundation Build
 
-This is sequential. Do it yourself (not delegated to an agent) since it touches many files:
+This is sequential per origin. Do it yourself (not delegated to an agent) since it touches shared files. Re-read the output plan and preserve every existing route before editing:
 
-1. **Update fonts** in `src/layouts/BaseLayout.astro` to match the target site's actual fonts (Google Fonts `<link>` or self-hosted `@font-face` in `globals.css`)
-2. **Update `src/styles/globals.css`** with the target's color tokens, spacing values, keyframe animations, utility classes, and any **global scroll behaviors** (Lenis, smooth scroll CSS, scroll-snap on body)
-3. **Create TypeScript interfaces** in `src/types/` for the content structures you've observed
-4. **Extract SVG icons** — find all inline `<svg>` elements on the page, deduplicate them, and render them from `src/components/Icons.astro` keyed by a `name` prop (e.g., `"search"`, `"arrow-right"`, `"logo"`). For very large or complex icons, split them into dedicated `src/components/icons/<IconName>.astro` files.
-5. **Download global assets** — write and run a Node.js script (`scripts/download-assets.mjs`) that downloads all images, videos, and other binary assets from the page to `public/`. Preserve meaningful directory structure.
-6. Verify: `npm run build` passes
+1. **Merge fonts** into `src/layouts/BaseLayout.astro` to match the target site's actual fonts (Google Fonts `<link>` or self-hosted `@font-face` in `globals.css`), keeping fonts existing routes still use
+2. **Merge into `src/styles/globals.css`** the target's color tokens, spacing values, keyframe animations, utility classes, and any **global scroll behaviors** (Lenis, smooth scroll CSS, scroll-snap on body). Scope anything page-specific that could conflict with existing routes
+3. **Create TypeScript interfaces** in `src/types/` for the content structures you've observed; reuse existing types when their contracts match, and don't change existing ones in ways that break other pages
+4. **Extract SVG icons** — find all inline `<svg>` elements on the page, deduplicate them against the icons already in `src/components/Icons.astro`, and add only new ones keyed by a `name` prop (e.g., `"search"`, `"arrow-right"`, `"logo"`). Never rename or redraw an existing icon name another page uses. For very large or complex icons, split them into dedicated `src/components/icons/<IconName>.astro` files.
+5. **Download assets into the planned locations** — write and run the page's uniquely named script (`scripts/download-assets-<site-slug>-<page-slug>.mjs`) that downloads images, videos, and other binary assets into the page's asset root or the shared folders from the output plan. Never overwrite another page's downloader or a different file with the same name.
+6. Verify every previously existing route still builds, then run `npm run build`
 
 ### Asset Discovery Script Pattern
 
@@ -232,7 +260,7 @@ JSON.stringify({
 });
 ```
 
-Then write a download script that fetches everything to `public/`. Use batched parallel downloads (4 at a time) with proper error handling.
+Then write the page's uniquely named download script that fetches everything into its planned asset locations. Use batched parallel downloads (4 at a time) with proper error handling, and skip files that already exist with identical content.
 
 ## Phase 3: Component Specification & Dispatch
 
@@ -242,7 +270,7 @@ This is the core loop. For each section in your page topology (top to bottom), y
 
 For each section, use browser MCP to extract everything:
 
-1. **Screenshot** the section in isolation (scroll to it, screenshot the viewport). Save to `docs/design-references/`.
+1. **Screenshot** the section in isolation (scroll to it, screenshot the viewport). Save to the page's screenshot root.
 
 2. **Extract CSS** for every element in the section. Use the extraction script below — don't hand-measure individual properties. Run it once per component container and capture the full output:
 
@@ -303,15 +331,15 @@ Record the diff explicitly: "Property X changes from VALUE_A to VALUE_B, trigger
 
 4. **Extract real content** — all text, alt attributes, aria labels, placeholder text. Use `element.textContent` for each text node. For tabbed/stateful content, **click each tab and extract content per state**.
 
-5. **Identify assets** this section uses — which downloaded images/videos from `public/`, which icon names from `Icons.astro`. Check for **layered images** (multiple `<img>` or background-images stacked in the same container).
+5. **Identify assets** this section uses — which downloaded images/videos from the page's asset root or the shared folders, which icon names from `Icons.astro`. Check for **layered images** (multiple `<img>` or background-images stacked in the same container).
 
 6. **Assess complexity** — how many distinct sub-components does this section contain? A distinct sub-component is an element with its own unique styling, structure, and behavior (e.g., a card, a nav item, a search panel).
 
 ### Step 2: Write the Component Spec File
 
-For each section (or sub-component, if you're breaking it up), create a spec file in `docs/research/components/`. This is NOT optional — every builder must have a corresponding spec file.
+For each section (or sub-component, if you're breaking it up), create a spec file inside the page's component-spec directory. This is NOT optional — every builder must have a corresponding spec file.
 
-**File path:** `docs/research/components/<component-name>.spec.md`
+**File path:** `docs/research/<site-slug>/<page-slug>/components/<component-name>.spec.md`
 
 **Template:**
 
@@ -319,8 +347,8 @@ For each section (or sub-component, if you're breaking it up), create a spec fil
 # <ComponentName> Specification
 
 ## Overview
-- **Target file:** `src/components/<ComponentName>.astro`
-- **Screenshot:** `docs/design-references/<screenshot-name>.png`
+- **Target file:** `src/components/<page-slug>/<ComponentName>.astro` (page-only section) or `src/components/<ComponentName>.astro` (shared site block)
+- **Screenshot:** `docs/design-references/<site-slug>/<page-slug>/<screenshot-name>.png`
 - **Interaction model:** <static | click-driven | scroll-driven | time-driven>
 - **Existing project reuse:** <components, layouts, icons, tokens, or assets to reuse/extend; write "N/A" only if none apply>
 
@@ -367,8 +395,8 @@ For each section (or sub-component, if you're breaking it up), create a spec fil
 - Cards: [...]
 
 ## Assets
-- Background image: `public/images/<file>.webp`
-- Overlay image: `public/images/<file>.png`
+- Background image: `public/images/<page-slug>/<file>.webp`
+- Overlay image: `public/images/shared/<file>.png`
 - Icons used: `name="arrow-right"`, `name="search"` via Icons.astro
 
 ## Text Content (verbatim)
@@ -393,10 +421,11 @@ Based on complexity, dispatch builder agent(s) in worktree(s):
 
 **What every builder agent receives:**
 - The full contents of its component spec file (inline in the prompt — don't say "go read the spec file")
-- Path to the section screenshot in `docs/design-references/`
+- Path to the section screenshot in the page's screenshot root
 - Which shared components to import (`Icons.astro`, `cn()` from `@/lib/utils`, any existing layouts)
 - Which existing project components, style tokens, icons, and assets must be reused or extended
-- The target file path (e.g., `src/components/HeroSection.astro`)
+- The target file path from the output plan (e.g., `src/components/docs--intro/HeroSection.astro`)
+- An explicit instruction not to modify files outside its target unless the spec says so (shared components, `globals.css`, other pages)
 - Instruction to verify with `npx astro check` before finishing
 - For responsive behavior: the specific breakpoint values and what changes
 
@@ -407,6 +436,7 @@ Based on complexity, dispatch builder agent(s) in worktree(s):
 As builder agents complete their work:
 - Merge their worktree branches into main
 - You have full context on what each agent built, so resolve any conflicts intelligently
+- Reject or repair any merge that deletes or rewrites an unrelated existing route, another page's component folder, or its assets
 - After each merge, verify the build still passes: `npm run build`
 - If a merge introduces type errors, fix them immediately
 
@@ -414,20 +444,22 @@ The extract → spec → dispatch → merge cycle continues until all sections a
 
 ## Phase 4: Page Assembly
 
-After all sections are built and merged, wire everything together in the appropriate Astro route. For a fresh single-page clone this is usually `src/pages/index.astro`; for an existing project or cloned subpage, create or update the matching file under `src/pages/` and preserve the current route conventions. Wrap the page in the existing layout, usually `src/layouts/BaseLayout.astro`, unless the project already uses a more specific layout:
+After all sections are built and merged, wire everything together in the exact destination route from the output plan. Use `src/pages/index.astro` only for the first clone in a fresh template (replacing the placeholder); otherwise use the planned path such as `src/pages/docs/intro.astro`, following the project's route conventions. Wrap the page in the existing layout, usually `src/layouts/BaseLayout.astro`, unless the project already uses a more specific layout:
 
 - Import all section components
 - Implement the page-level layout from your topology doc (scroll containers, column structures, sticky positioning, z-index layering)
 - Connect real content to component props
 - Reuse the project's existing header, footer, navigation, layout wrappers, and shared UI components unless the target page intentionally differs
 - Implement page-level behaviors inside `<script>` blocks in the page or layout: scroll snap, scroll-driven animations, dark-to-light transitions, intersection observers, smooth scroll (Lenis etc.)
+- If the page links to other already-cloned pages, point those links at their local routes
+- Confirm all routes that existed before this run are still present in `src/pages/` and `dist/` and were not unintentionally changed
 - Verify: `npm run build` passes clean
 
 ## Phase 5: Visual QA Diff
 
 After assembly, do NOT declare the clone complete. Take side-by-side comparison screenshots:
 
-1. Open the original site and your clone side-by-side (or take screenshots at the same viewport widths)
+1. Open the original site and the clone at its planned local route side-by-side (or take screenshots at the same viewport widths)
 2. Compare section by section, top to bottom, at desktop (1440px)
 3. Compare again at mobile (390px)
 4. For each discrepancy found:
@@ -443,7 +475,8 @@ Only after this visual QA pass is the clone complete.
 
 Before dispatching ANY builder agent, verify you can check every box. If you can't, go back and extract more.
 
-- [ ] Spec file written to `docs/research/components/<name>.spec.md` with ALL sections filled
+- [ ] Spec file written to `docs/research/<site-slug>/<page-slug>/components/<name>.spec.md` with ALL sections filled
+- [ ] Target file path and asset paths match the output plan and don't collide with another page's files
 - [ ] Every CSS value in the spec is from `getComputedStyle()`, not estimated
 - [ ] Interaction model is identified and documented (static / click / scroll / time)
 - [ ] For stateful components: every state's content and styles are captured
@@ -465,6 +498,7 @@ These are lessons from previous failed clones — each one cost hours of rework:
 - **Don't build mockup components for content that's actually videos/animations.** Check if a section uses `<video>`, Lottie, or canvas before building elaborate HTML mockups of what the video shows.
 - **Don't approximate CSS classes.** "It looks like `text-lg`" is wrong if the computed value is `18px` and `text-lg` is `18px/28px` but the actual line-height is `24px`. Extract exact values.
 - **Don't build everything in one monolithic commit.** The whole point of this pipeline is incremental progress with verified builds at each step.
+- **Don't treat a new target as permission to replace the current site.** Preserve existing routes and per-page artifacts; ask before updating a route that already exists.
 - **Don't reference docs from builder prompts.** Each builder gets the CSS spec inline in its prompt — never "see DESIGN_TOKENS.md for colors." The builder should have zero need to read external docs.
 - **Don't skip asset extraction.** Without real images, videos, and fonts, the clone will always look fake regardless of how perfect the CSS is.
 - **Don't give a builder agent too much scope.** If you're writing a builder prompt and it's getting long because the section is complex, that's a signal to break it into smaller tasks.
@@ -477,6 +511,8 @@ These are lessons from previous failed clones — each one cost hours of rework:
 ## Completion
 
 When done, report:
+- Source URL → destination route mapping for every page built
+- Existing routes preserved and any explicitly approved replacements
 - Total sections built
 - Total components created
 - Total spec files written (should match components)

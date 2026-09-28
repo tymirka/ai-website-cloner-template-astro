@@ -56,6 +56,7 @@ A reusable template for reverse-engineering any website into a clean, modern Ast
 - If the repository already contains implemented pages, layouts, components, design tokens, or assets, adapt the new page to the current project instead of treating it as a fresh scaffold.
 - Reuse existing shared elements first: layouts, header/footer, navigation, buttons, cards, icons, utility classes, content patterns, and style tokens. Create new components only when the current project has no suitable equivalent.
 - When cloning a subpage into an existing site, preserve the site's established structure and route conventions, and integrate the subpage with the same visual language and reusable building blocks.
+- Never delete or overwrite an existing route, another page's research/screenshots/assets, or shared tokens that other pages use without explicit approval. Each cloned page keeps its artifacts in `docs/research/<site-slug>/<page-slug>/` and `docs/design-references/<site-slug>/<page-slug>/`; page-only sections go in `src/components/<page-slug>/`, page-only assets in `public/images/<page-slug>/`.
 
 ## Project Structure
 ```
